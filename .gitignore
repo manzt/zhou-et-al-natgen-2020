@@ -1,0 +1,9 @@
+.ipynb_checkpoints/
+.vscode/
+.snakemake/
+.data
+.DS_Store
+
+data/
+results/
+hakyimlab-MetaXcan-*/
