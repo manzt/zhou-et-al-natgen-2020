@@ -89,10 +89,10 @@ manhattan_base <- function(res) {
 ```{r, warning=FALSE, message=FALSE}
 # Reported in Zhou et al, NatGen 2019
 p_known <- c(
-  "ABCA1", "SORT1", "LPA", "TNKS", "FASD3", "LIPC", "KPNB1", "PLTP", "APOC2"
+  "ABCA1", "SORT1", "LPA", "TNKS", "FADS3", "LIPC", "KPNB1", "PLTP", "APOC2"
 )
 JTI_known <- c(
-  "SORT1", "LPA", "TNKS", "FASD3", "LIPC", "KPNB1", "PLTP", "APOC2", "ANGPTL3",
+  "SORT1", "LPA", "TNKS", "FADS3", "LIPC", "KPNB1", "PLTP", "APOC2", "ANGPTL3",
   "LIPA", "PPARG", "CETP", "ADH1B", "APOE", "FADS1", "LPIN3", "PCSK9"
 )
 
