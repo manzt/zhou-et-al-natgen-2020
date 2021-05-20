@@ -89,3 +89,11 @@ rule run_SPrediXcan:
       --freq_column minor_AF \
       --output_file {output} \
     """
+
+rule render_rmd:
+  input: "results/30780_irnt-PrediXcan_Liver.csv", "results/30780_irnt-JTI_Liver.csv"
+  output: "plots.html"
+  shell: 
+    """
+    R -e "rmarkdown::render('plots.Rmd')"
+    """

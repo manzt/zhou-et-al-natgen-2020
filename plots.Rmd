@@ -1,0 +1,135 @@
+---
+title: "Inspect Outputs"
+author: "Trevor Manz"
+date: "5/19/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=F}
+library(tidyverse)
+library(ggrepel)
+library(patchwork)
+
+
+genes_fp <- fs::path("results", "genes.csv")
+chrs <- as.character(1:22)
+
+# Lookup table for chr positions, etc
+if (!file.exists(genes_fp)) {
+  biomaRt::getBM(
+    attributes = c(
+      "ensembl_gene_id",
+      "start_position",
+      "end_position",
+      "chromosome_name"
+    ),
+    filters = "chromosome_name",
+    values = chrs,
+    mart = biomaRt::useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+  ) %>% write_tsv(genes_fp)
+}
+
+genes <- read_tsv(genes_fp)
+```
+
+```{r, warning=FALSE, message=FALSE}
+read_results <- function(ukbb_id, tissue, methods = c("PrediXcan", "JTI")) {
+  data <- methods %>%
+    map(function(m) {
+      fp <- fs::path("results", paste0(ukbb_id, "-", m, "_", tissue, ".csv"))
+      read_csv(fp) %>% 
+        mutate(method = m) %>%
+        inner_join(genes, by = c("gene" = "ensembl_gene_id"))
+    }) %>%
+    bind_rows() %>% 
+    rename(chr = chromosome_name) %>%
+    mutate(
+      bp = start_position,
+      p_fdr = p.adjust(pvalue, method = 'fdr'),
+      p_bonferroni = p.adjust(pvalue, method = 'bonferroni')
+    )
+  
+  # get cumulative position
+  data %>%
+    group_by(chr) %>%
+    summarise(chr_len = max(bp)) %>%
+    mutate(tot = cumsum(chr_len) - chr_len) %>% 
+    select(-chr_len) %>% 
+    left_join(data, ., by='chr') %>% 
+    mutate(bp_cum = tot + bp)
+}
+
+manhattan_base <- function(res) {
+  # Adapted from https://www.r-graph-gallery.com/101_Manhattan_plot.html
+  axisdf = res %>% 
+    group_by(chr) %>% 
+    summarize(center=(max(bp_cum) + min(bp_cum) ) / 2 )
+  
+  ggplot(res, aes(x=bp_cum, y=-log10(pvalue))) +
+    scale_x_continuous(label = c(1:15, "", 17, "", 19, "", 21, ""), breaks= axisdf$center) +
+    scale_y_log10(
+      breaks=c(1, 2, 3, 5, 10, 20, 30, 50, 100, 200, 300, 500),
+      limits=c(0.7, 600),
+      expand=c(0.04,0)
+    ) + 
+    theme_bw() +
+    theme( 
+      panel.border = element_blank(),
+      panel.grid = element_blank(),
+      legend.position = "top"
+    ) +
+    labs(x = 'Chromosome', y = '-log10[P]', color = '')
+}
+
+```
+
+# Comparison of PrediXcan and JTI models in liver to UK Biobank LDL-C GWAS summary stats
+```{r, warning=FALSE, message=FALSE}
+# Reported in Zhou et al, NatGen 2019
+p_known <- c(
+  "ABCA1", "SORT1", "LPA", "TNKS", "FASD3", "LIPC", "KPNB1", "PLTP", "APOC2"
+)
+JTI_known <- c(
+  "SORT1", "LPA", "TNKS", "FASD3", "LIPC", "KPNB1", "PLTP", "APOC2", "ANGPTL3",
+  "LIPA", "PPARG", "CETP", "ADH1B", "APOE", "FADS1", "LPIN3", "PCSK9"
+)
+
+ldl <- read_results(ukbb_id = "30780_irnt", tissue = "Liver") %>% 
+  mutate(known = ifelse(method == "JTI", gene_name %in% JTI_known, gene_name %in% p_known))
+
+manhattan_ldl <- manhattan_base(ldl) +
+  geom_point(aes(color = paste(ifelse(known, "Known", "Additional"), method))) +
+  geom_label_repel(
+    data = ldl %>% filter(known), 
+    aes(label = gene_name, color = paste(ifelse(known, "Known", "Additional"), method)), 
+    size = 3, alpha = 0.9, show_guide=FALSE
+  ) +
+  scale_color_manual(values = c('#B4D88B','#A6CEE2', '#34A048', '#1F78B4'))
+
+bars <- ldl %>%
+  filter(p_fdr < 0.05) %>% 
+  ggplot(aes(fct_rev(method), fill = paste(known, method))) + 
+  geom_bar(stat = "count") + 
+  geom_text(stat="count", aes(label=..count..), vjust=-0.5) +
+  scale_fill_manual(values = c('#B4D88B','#A6CEE2', '#34A048', '#1F78B4')) +
+  scale_y_continuous(limits = c(0, 700)) +
+  facet_wrap(~!known) +
+  ylab("Number of significant genes") + 
+  theme_bw() +
+  theme(
+    strip.text.x = element_blank(),
+    panel.border = element_blank(), 
+    panel.grid = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust=1)
+  ) +
+  guides(fill = FALSE)
+```
+  
+```{r, warning=FALSE}
+manhattan_ldl + bars + plot_layout(widths = c(5, 1))
+```
