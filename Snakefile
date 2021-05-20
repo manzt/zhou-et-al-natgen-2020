@@ -49,7 +49,7 @@ rule download_cov:
 
 rule download_and_merge_gwas:
   input: "data/GWAS/variants.sorted.tsv"
-  output: "data/GWAS/{ukbb_id}.gwas.imputed_v3.both_sexes.tsv"
+  output: protected("data/GWAS/{ukbb_id}.gwas.imputed_v3.both_sexes.tsv")
   params: lambda wildcards: LOOKUP[wildcards.ukbb_id]
   shell: "paste <(cut -f 2- {input}) <(wget -qO - {params} | gunzip) > {output}"
 
@@ -59,7 +59,7 @@ rule download_variants:
 
 rule sort_variants:
   input: "data/GWAS/variants.tsv.bgz"
-  output: "data/GWAS/variants.sorted.tsv"
+  output: protected("data/GWAS/variants.sorted.tsv")
   shell:
     """
     gunzip -c {input} | head -n 1 | cut -f -6 > {output} || true
