@@ -14,7 +14,6 @@ GWAS_TISSUE_PAIRS =  [
   ("30700_irnt", "Kidney_Cortex"),               # Creatinine (quantile)
 ]
 LOOKUP = {
-  # ref: https://nealelab.github.io/UKBB_ldsc/downloads.html
   "30740_irnt": "https://dropbox.com/s/d16kjpukj1qmg6e/30740_irnt.gwas.imputed_v3.both_sexes.tsv.bgz",
   "30760_irnt": "https://dropbox.com/s/65jisgxwbbdrkaw/30760_irnt.gwas.imputed_v3.both_sexes.tsv.bgz",
   "30780_irnt": "https://dropbox.com/s/4rnjzczwjgs5pgl/30780_irnt.gwas.imputed_v3.both_sexes.tsv.bgz",
