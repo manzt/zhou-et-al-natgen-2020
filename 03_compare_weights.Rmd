@@ -1,0 +1,68 @@
+---
+title: ""
+author: "Trevor Manz"
+date: "5/19/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Compare weights
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+
+load_weights <- function(method, tissue) {
+  db <- fs::path("data", "weights", paste0(method, "_", tissue, ".db"))
+  conn <- DBI::dbConnect(RSQLite::SQLite(), db)
+  df <- tbl(conn, "weights") %>% collect()
+  DBI::dbDisconnect(conn)
+  df %>% mutate(method = method)
+}
+```
+
+```{r}
+c("UTMOST", "PrediXCan", "JTI") %>%
+  map(function(m) load_weights(m, "Liver")) %>%
+  bind_rows() %>%
+  group_by(gene, method) %>%
+  count() %>%
+  ggplot(aes(n, color = method)) +
+  stat_ecdf() +
+  theme_minimal()
+```
+
+```{r}
+c("UTMOST", "PrediXCan", "JTI") %>%
+  map(function(m) load_weights(m, "Pancreas")) %>%
+  bind_rows() %>%
+  group_by(gene, method) %>%
+  count() %>%
+  ggplot(aes(n, color = method)) +
+  stat_ecdf() +
+  theme_minimal()
+```
+
+
+```{r}
+c("UTMOST", "PrediXCan", "JTI") %>%
+  map(function(m) load_weights(m, "Kidney_Cortex")) %>%
+  bind_rows() %>%
+  group_by(gene, method) %>%
+  count() %>%
+  ggplot(aes(n, color = method)) +
+  stat_ecdf() +
+  theme_minimal()
+```
+
+```{r}
+c("UTMOST", "PrediXCan", "JTI") %>%
+  map(function(m) load_weights(m, "Kidney_Cortex")) %>%
+  bind_rows() %>%
+  ggplot(aes(weight, color = method)) +
+  stat_ecdf() +
+  theme_minimal()
+```
+

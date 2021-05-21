@@ -1,5 +1,5 @@
 ---
-title: "Inspect Outputs"
+title: "GWAS"
 author: "Trevor Manz"
 date: "5/19/2021"
 output: html_document
@@ -152,7 +152,7 @@ fig4 <- function(results, title = NULL, colors = COLORS, gray_below = FALSE) {
 }
 ```
 
-# Comparison of PrediXcan and JTI models in liver to UK Biobank LDL-C GWAS summary stats
+# Manhattan plot for LDL-C level from the application of PrediXcan and JTI models in liver to UK Biobank LDL-C GWAS summary statistics.
 ```{r, warning=FALSE, message=FALSE}
 # Load known reference genes
 known_genes <- read_sheet("S4_LDL_known_genes") %>% pull(genename)
@@ -195,46 +195,11 @@ manz2 / zhou2
 ```{r, warning=FALSE, fig.fullwidth = TRUE, fig.width=10, fig.height=6}
 fig4(ldl %>% filter(method != "PrediXcan"), colors = c("#B4D88B", "#FCAE6B", "#34A048", "#E6550E"))
 ```
+
 ```{r, warning=FALSE, fig.fullwidth = TRUE, fig.width=10, fig.height=6}
 fig4(
   results = ldl, 
   colors = c("#B4D88B", "#A6CEE2", "#FCAE6B", "#34A048", "#1F78B4", "#E6550E"),
   gray_below = TRUE
 )
-```
-
-## JTI, PrediXcan, and UTMOST performance comparison on additional GWAS datasets
-```{r, message=FALSE, warning=FALSE, fig.fullwidth = TRUE, fig.width=10, fig.height=6}
-count_sig_genes <- function(ukbb_id, tissue, name) {
-  read_results(ukbb_id, tissue) %>%
-    filter(pfdr < 0.05) %>%
-    count(method) %>%
-    mutate(name = name)
-}
-
-gwas_summary <- bind_rows(
-  count_sig_genes("30740_irnt", "Adipose_Visceral_Omentum", "Glucose (quantile) - Adipose Visceral Omentum"),
-  count_sig_genes("30740_irnt", "Liver", "Glucose (quantile) - Liver"),
-  count_sig_genes("30740_irnt", "Muscle_Skeletal", "Glucose (quantile) - Muscle Skeletal"),
-  count_sig_genes("30740_irnt", "Pancreas", "Glucose (quantile) - Pancreas"),
-  count_sig_genes("30760_irnt", "Liver", "HDL (quantile) - Liver"),
-  count_sig_genes("30780_irnt", "Liver", "LDL (quantile) - Liver"),
-  count_sig_genes("30890_irnt", "Skin_Sun_Exposed_Lower_leg", "Vitamin D (quantile) - Skin"),
-  count_sig_genes("30710_irnt", "Whole_Blood", "C-reactive protein (quantile) - Whole Blood"),
-  count_sig_genes("30700_irnt", "Kidney_Cortex", "Creatinine (quantile) - Kidney")
-)
-
-gwas_summary %>%
-  ggplot(aes(n, name)) +
-  geom_point(aes(color = method), size = 3) +
-  theme_minimal() +
-  scale_color_manual(values = c("#B4D88B", "#A6CEE2", "#FCAE6B")) +
-  theme_bw() +
-  theme(
-    panel.border = element_blank(),
-    legend.position = "top",
-    plot.title.position = "plot"
-  ) +
-  labs(x = "Significant genes (pFDR < 0.05)", y = "Source - Trait", color = '') +
-  ggtitle("JTI, PrediXcan, and UTMOST performance comparison on additional GWAS datasets")
 ```

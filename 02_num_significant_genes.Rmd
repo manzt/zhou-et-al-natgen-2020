@@ -1,0 +1,64 @@
+---
+title: "Comparison of significant genes in JTI, UTMOST, and PrediXcan"
+author: "Trevor Manz"
+date: "5/19/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## JTI, PrediXcan, and UTMOST performance comparison on additional GWAS datasets
+```{r, message=FALSE, warning=FALSE, fig.fullwidth = TRUE, fig.width=10, fig.height=6}
+library(tidyverse)
+
+# Load local GWAS result
+read_result <- function(ukbb_id, method, tissue) {
+  fs::path("results", paste0(ukbb_id, "-", method, "_", tissue, ".csv")) %>%
+    read_csv() %>%
+    # Match columns to zhou results
+    rename(geneid = gene, genename = gene_name) %>%
+    # Add new cols
+    mutate(method = method, pfdr = p.adjust(pvalue, method = "fdr"))
+}
+
+# Merge results from multiple methods
+read_results <- function(ukbb_id, tissue, methods = c("PrediXcan", "JTI", "UTMOST")) {
+  methods %>%
+    map(function(m) read_result(ukbb_id, m, tissue)) %>%
+    bind_rows()
+}
+
+count_sig_genes <- function(ukbb_id, tissue, name) {
+  read_results(ukbb_id, tissue) %>%
+    filter(pfdr < 0.05) %>%
+    count(method) %>%
+    mutate(name = name)
+}
+
+gwas_summary <- bind_rows(
+  count_sig_genes("30740_irnt", "Adipose_Visceral_Omentum", "Glucose (quantile) - Adipose Visceral Omentum"),
+  count_sig_genes("30740_irnt", "Liver", "Glucose (quantile) - Liver"),
+  count_sig_genes("30740_irnt", "Muscle_Skeletal", "Glucose (quantile) - Muscle Skeletal"),
+  count_sig_genes("30740_irnt", "Pancreas", "Glucose (quantile) - Pancreas"),
+  count_sig_genes("30760_irnt", "Liver", "HDL (quantile) - Liver"),
+  count_sig_genes("30780_irnt", "Liver", "LDL (quantile) - Liver"),
+  count_sig_genes("30890_irnt", "Skin_Sun_Exposed_Lower_leg", "Vitamin D (quantile) - Skin"),
+  count_sig_genes("30710_irnt", "Whole_Blood", "C-reactive protein (quantile) - Whole Blood"),
+  count_sig_genes("30700_irnt", "Kidney_Cortex", "Creatinine (quantile) - Kidney")
+)
+
+ggplot(gwas_summary, aes(n, name)) +
+  geom_point(aes(color = method), size = 3) +
+  theme_minimal() +
+  scale_color_manual(values = c("#B4D88B", "#A6CEE2", "#FCAE6B")) +
+  theme_bw() +
+  theme(
+    panel.border = element_blank(),
+    legend.position = "top",
+    plot.title.position = "plot"
+  ) +
+  labs(x = "Significant genes (pFDR < 0.05)", y = "Source - Trait", color = "") +
+  ggtitle("JTI, PrediXcan, and UTMOST performance comparison on additional GWAS datasets")
+```

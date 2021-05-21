@@ -92,14 +92,30 @@ rule run_SPrediXcan:
       --output_file {output} \
     """
 
-rule render_rmd:
+rule gwas_analysis:
   input:
     "results/30780_irnt-PrediXcan_Liver.csv",
     "results/30780_irnt-JTI_Liver.csv",
     "results/30780_irnt-UTMOST_Liver.csv",
     "data/supplementary_tables.xlsx"
-  output: "plots.html"
+  output: "reports/01_gwas.html"
   shell:
     """
-    R -e "rmarkdown::render('plots.Rmd')"
+    R -e "rmarkdown::render('01_gwas.Rmd', output_file = '{output}')"
+    """
+
+rule count_significant_genes:
+  input: expand("results/{out}.csv", out=SPRED_OUT)
+  output: "reports/02_num_significant_genes.html"
+  shell:
+    """
+    R -e "rmarkdown::render('02_num_significant_genes.Rmd', output_file = '{output}')"
+    """
+
+rule compare_weights:
+  input: expand("data/weights/{method}_{tissue}.db", method=METHODS, tissue=[p[1] for p in GWAS_TISSUE_PAIRS])
+  output: "reports/03_compare_weights.html"
+  shell:
+    """
+    R -e "rmarkdown::render('03_compare_weights.Rmd', output_file = '{output}')"
     """
