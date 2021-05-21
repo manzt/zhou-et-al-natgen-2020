@@ -140,7 +140,7 @@ manhattan_ldl + bars + plot_layout(widths = c(5, 1))
 # Annotate "known" associations that weren't found to be significant
 ```{r, warning=FALSE, fig.fullwidth = TRUE, fig.width=10, fig.height=6}
 set.seed(10)
-manhattan_base(ldl %>% filter(p_fdr < 0.05)) +
+m4 <- manhattan_base(ldl %>% filter(p_fdr < 0.05)) +
   geom_point(data = ldl %>% filter(p_fdr > 0.05), color = 'gray') +
   geom_point(data = ldl %>% filter(!known & p_fdr < 0.05), aes(color = paste("Additional", method))) +
   geom_label_repel(
@@ -179,4 +179,144 @@ get_sets <- function(ldl_df) {
   )) %>% as.data.frame()
 }
 ```
+
+
+# Recreate from paper
+```{r, warning=FALSE}
+
+read_s5 <- function(fp) {
+  data <- readxl::read_excel(fp, sheet = "S5_LDL_TWAS") %>% 
+    select(genename, chr, left, right, pvalue_PrediXcan, pvalue_JTI) %>%
+    pivot_longer(
+      cols = starts_with('pvalue'),
+      names_to = "method", 
+      names_prefix = "pvalue_",
+      values_to = "pvalue"
+    ) %>%
+    rename(gene_name = genename, start_position = left, end_position = right) %>%
+    mutate(
+      pvalue = as.numeric(pvalue),
+      bp = start_position,
+      p_fdr = p.adjust(pvalue, method = "fdr"),
+      p_bonferroni = p.adjust(pvalue, method = "bonferroni")
+    ) %>%
+    arrange(desc(method)) %>%
+    drop_na() %>% 
+    mutate(known = ifelse(method == "JTI", gene_name %in% JTI_known, gene_name %in% p_known))
+  
+  data %>%
+    group_by(chr) %>%
+    summarise(chr_len = max(bp)) %>%
+    mutate(tot = cumsum(chr_len) - chr_len) %>%
+    select(-chr_len) %>%
+    left_join(data, ., by = "chr") %>%
+    mutate(bp_cum = tot + bp)
+}
+```
+
+```{r, warning=F}
+ldl_paper <- read_s5(".data/supplement/41588_2020_706_MOESM3_ESM.xlsx")
+m2 <- manhattan_base(ldl_paper) +
+  geom_point(data = ldl_paper %>% filter(!known), aes(color = paste("Additional", method))) +
+  geom_label_repel(
+    data = ldl_paper %>% filter(known),
+    aes(label = gene_name, color = paste("Known", method)),
+    size = 3,
+    alpha = 0.9,
+    show.legend = FALSE,
+    box.padding = 0.5
+  ) +
+  geom_point(data = ldl_paper%>% filter(known), aes(color = paste("Known", method))) +
+  scale_color_manual(values = c("#B4D88B", "#A6CEE2", "#34A048", "#1F78B4"))
+m2
+```
+
+```{r, warning=F}
+set.seed(10)
+m3 <- manhattan_base(ldl_paper %>% filter(p_fdr < 0.05)) +
+  geom_point(data = ldl_paper %>% filter(p_fdr > 0.05), color = 'gray') +
+  geom_point(data = ldl_paper %>% filter(!known & p_fdr < 0.05), aes(color = paste("Additional", method))) +
+  geom_label_repel(
+    data = ldl_paper %>% filter(known & p_fdr < 0.05),
+    aes(label = gene_name, color = paste("Known", method)),
+    size = 3,
+    alpha = 0.9,
+    show.legend = FALSE,
+    box.padding = 0.5
+  ) +
+  geom_point(data = ldl_paper %>% filter(known & p_fdr < 0.05), aes(color = paste("Known", method))) +
+  geom_label_repel(
+    data = ldl_paper %>% filter(known & p_fdr > 0.05),
+    aes(label = gene_name),
+    size = 3,
+    alpha = 0.9,
+    show.legend = FALSE,
+    box.padding = 0.5,
+  ) +
+  geom_point(data = ldl_paper %>% filter(p_fdr > 0.05 & known)) +
+  scale_color_manual(values = c("#B4D88B", "#A6CEE2", "#34A048", "#1F78B4"))
+```
+
+
+```{r, warning=FALSE, fig.fullwidth = TRUE, fig.width=10, fig.height=10}
+m3 / m4
+```
+
+```{r, warning=FALSE, fig.fullwidth = TRUE, fig.width=10, fig.height=10}
+paper <- ldl_paper %>%
+  # filter(known) %>% 
+  mutate(id = paste0(method, "_", gene_name)) %>%
+  select(id, pvalue, p_fdr)
+
+trevor <- ldl %>% 
+  # filter(known) %>% 
+  select(gene_name, pvalue, method, known, p_fdr) %>%
+  mutate(id = paste0(method, "_", gene_name))
+
+joined <- inner_join(trevor, paper, by='id', suffix = c("_trevor", "_paper")) %>% 
+  filter(!(gene_name %in% c('SORT1', 'CELSR2', 'PSRC1', 'BCAM'))) %>%
+  arrange(-pvalue_trevor) %>% 
+  drop_na()
+```
+
+```{r, warning=FALSE, fig.fullwidth = TRUE, fig.width=10, fig.height=10}
+joined %>%
+  ggplot(aes(-log10(pvalue_trevor), -log10(pvalue_paper))) + 
+  geom_point() +
+  coord_fixed() +
+  scale_y_log10(
+    breaks = c(1, 2, 3, 5, 10, 20, 30, 50, 100),
+    limits = c(0.7, 200),
+    expand = c(0, 0)
+  ) +
+  scale_x_log10(
+    breaks = c(1, 2, 3, 5, 10, 20, 30, 50, 100),
+    limits = c(0.7, 200),
+    expand = c(0, 0)
+  ) +
+  theme_bw()
+```
+
+
+
+```{r, warning=FALSE, fig.fullwidth = TRUE, fig.width=10, fig.height=10}
+
+j_known <- joined %>% filter(method == "JTI") %>% sample_n(1000)
+m <- lm(log(pvalue_paper) ~ log(pvalue_trevor), data = j_known)
+
+tibble(fitted = -predict(m), resid = resid(m)) %>% 
+  ggplot(aes(fitted, resid)) + 
+    geom_point() +
+    theme_bw()
+```
+
+# Compare weights
+
+```{r}
+library(tidyverse)
+library(dbplyr)
+con <- DBI::dbConnect(RSQLite::SQLite(), path = "./data/JTI_Adipose_Visceral_Omentum.db")
+weights <- tbl(con, "weights")
+```
+
 
