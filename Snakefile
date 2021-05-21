@@ -1,7 +1,7 @@
 from itertools import product
 
 METAXCAN_HASH = "e211445" # git hash for `master` branch of hakyimlab/MetaXcan on 2021-05-19
-METHODS = ["JTI", "PrediXcan"]
+METHODS = ["JTI", "PrediXcan", "UTMOST"]
 GWAS_TISSUE_PAIRS =  [
   ("30740_irnt", "Adipose_Visceral_Omentum"),    # glucose (quantile)
   ("30740_irnt", "Liver"),                       # glucose (quantile)
@@ -97,6 +97,7 @@ rule render_rmd:
   input:
     "results/30780_irnt-PrediXcan_Liver.csv",
     "results/30780_irnt-JTI_Liver.csv",
+    "results/30780_irnt-UTMOST_Liver.csv",
     "data/supplementary_tables.xlsx"
   output: "plots.html"
   shell:

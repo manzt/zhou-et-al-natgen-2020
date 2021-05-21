@@ -9,67 +9,84 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r, message=F}
+```{r, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(ggrepel)
 library(patchwork)
 
-genes_fp <- fs::path("results", "genes.csv")
-chrs <- as.character(1:22)
+set.seed(42)
 
-# Lookup table for chr positions, etc
-if (!file.exists(genes_fp)) {
-  biomaRt::getBM(
-    attributes = c(
-      "ensembl_gene_id",
-      "start_position",
-      "end_position",
-      "chromosome_name"
-    ),
-    filters = "chromosome_name",
-    values = chrs,
-    mart = biomaRt::useMart("ensembl", dataset = "hsapiens_gene_ensembl")
-  ) %>% write_tsv(genes_fp)
+#### Data utils
+
+read_sheet <- function(name) {
+  fs::path("data", "supplementary_tables.xlsx") %>% readxl::read_excel(name)
 }
 
-genes <- read_tsv(genes_fp)
-```
-
-```{r, warning=FALSE, message=FALSE}
-read_results <- function(ukbb_id, tissue, methods = c("PrediXcan", "JTI")) {
-  data <- methods %>%
-    map(function(m) {
-      fp <- fs::path("results", paste0(ukbb_id, "-", m, "_", tissue, ".csv"))
-      read_csv(fp) %>%
-        mutate(method = m) %>%
-        inner_join(genes, by = c("gene" = "ensembl_gene_id"))
-    }) %>%
-    bind_rows() %>%
-    rename(chr = chromosome_name) %>%
-    mutate(
-      bp = start_position,
-      p_fdr = p.adjust(pvalue, method = "fdr"),
-      p_bonferroni = p.adjust(pvalue, method = "bonferroni")
-    )
-
-  # get cumulative position
-  data %>%
-    group_by(chr) %>%
-    summarise(chr_len = max(bp)) %>%
-    mutate(tot = cumsum(chr_len) - chr_len) %>%
-    select(-chr_len) %>%
-    left_join(data, ., by = "chr") %>%
-    mutate(bp_cum = tot + bp)
+# Load results from Zhou et al, NatGen 201
+zhou_results <- function() {
+  data <- read_sheet("S5_LDL_TWAS") %>%
+    # Drop unused cols
+    select(!genetype) %>%
+    # Make table tidy
+    mutate(chr = as.character(chr)) %>% 
+    mutate(across(effect_size_PrediXcan:PFDR_JTI, as.numeric)) %>%
+    pivot_longer(
+      !c(genename, geneid, chr, left, right),
+      names_to = c(".value", "method"),
+      names_pattern = "(.*)_(PrediXcan|JTI)"
+    ) %>%
+    # arrange by method
+    arrange(desc(method)) %>%
+    rename(pfdr = PFDR) %>%
+    mutate(bp = left) %>%
+    drop_na()
 }
+
+# Load local GWAS result
+read_result <- function(ukbb_id, method, tissue) {
+  fs::path("results", paste0(ukbb_id, "-", method, "_", tissue, ".csv")) %>% 
+    read_csv() %>%
+    # Match columns to zhou results
+    rename(geneid = gene, genename = gene_name) %>%
+    # Add new cols
+    mutate(method = method, pfdr = p.adjust(pvalue, method = "fdr"))
+}
+
+# Merge results from multiple methods
+read_results <- function(ukbb_id, tissue, methods = c("PrediXcan", "JTI", "UTMOST")) {
+  methods %>% 
+    map(function(m) read_result(ukbb_id, m, tissue)) %>%
+    bind_rows()
+}
+
+
+#### Plotting utils
+
+COLORS <- c("#B4D88B", "#A6CEE2", "#34A048", "#1F78B4")
+FDR <- 0.05
 
 manhattan_base <- function(res) {
   # Adapted from https://www.r-graph-gallery.com/101_Manhattan_plot.html
+  # get cumulative position
+  res <- res %>%
+    group_by(chr) %>%
+    summarise(chr_len = max(bp)) %>%
+    arrange(as.numeric(chr)) %>%
+    mutate(tot = cumsum(chr_len) - chr_len) %>%
+    select(-chr_len) %>%
+    left_join(res, ., by = "chr") %>%
+    mutate(bp_cum = tot + bp)
+
   axisdf <- res %>%
     group_by(chr) %>%
-    summarize(center = (max(bp_cum) + min(bp_cum)) / 2)
-
+    summarize(center = (max(bp_cum) + min(bp_cum)) / 2) %>%
+    arrange(as.numeric(chr))
+  
   ggplot(res, aes(x = bp_cum, y = -log10(pvalue))) +
-    scale_x_continuous(label = c(1:15, "", 17, "", 19, "", 21, ""), breaks = axisdf$center) +
+    scale_x_continuous(
+      label = c(1:15, "", 17, "", 19, "", 21, ""),
+      breaks = axisdf$center
+    ) +
     scale_y_log10(
       breaks = c(1, 2, 3, 5, 10, 20, 30, 50, 100, 200, 300, 500),
       limits = c(0.7, 600),
@@ -83,240 +100,105 @@ manhattan_base <- function(res) {
     ) +
     labs(x = "Chromosome", y = "-log10[P]", color = "")
 }
+
+sig_genes_bars <- function(results, fdr = FDR, colors = COLORS) {
+  results %>%
+    filter(pfdr < fdr) %>%
+    ggplot(aes(fct_rev(method), fill = paste(known, method))) +
+      geom_bar(stat = "count") +
+      geom_text(stat = "count", aes(label = ..count..), vjust = -1) +
+      scale_y_continuous(limits = c(0, 700)) +
+      facet_wrap(~ !known) +
+      ylab("Number of significant genes (p FDR < 0.05)") +
+      theme_bw() +
+      theme(
+        strip.text.x = element_blank(),
+        panel.border = element_blank(),
+        panel.grid = element_blank(),
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1)
+      ) +
+      guides(fill = FALSE) +
+      scale_fill_manual(values = colors)
+}
+
+manhatten_labeled_fdr <- function(results, fdr = FDR, colors = COLORS, gray_below = FALSE) {
+  if (gray_below) {
+    below_pts <- geom_point(data = ~ filter(.x, pfdr > fdr), color = "lightgray")
+  } else {
+    below_pts <- geom_point(data = ~ filter(.x, pfdr > fdr), aes(color = paste("Addtional", method)))
+  }
+  manhattan_base(results) +
+    geom_point(data = ~ filter(.x, pfdr < fdr & !known), aes(color = paste("Addtional", method))) + 
+    geom_point(data = ~ filter(.x, pfdr < fdr & known), aes(color = paste("Known", method))) +
+    below_pts +
+    geom_label_repel(
+      data = ~ filter(.x, pfdr < fdr & known),
+      aes(label = genename, color = paste("Known", method)),
+      size = 3,
+      alpha = 0.9,
+      show.legend = FALSE,
+      box.padding = 0.5
+    ) +
+    scale_color_manual(values = colors)
+}
+
+# Creates barplot from paper
+fig4 <- function(results, title = NULL, colors = COLORS, gray_below = FALSE) {
+  if (!is.null(title)) title <- ggtitle(title)
+  m <- manhatten_labeled_fdr(results, colors = colors, gray_below = gray_below) + title
+  bars <- sig_genes_bars(results, colors = colors) 
+  m + bars + plot_layout(widths = c(5, 1))
+}
 ```
 
 # Comparison of PrediXcan and JTI models in liver to UK Biobank LDL-C GWAS summary stats
 ```{r, warning=FALSE, message=FALSE}
-# Reported in Zhou et al, NatGen 2019
-p_known <- c(
-  "ABCA1", "SORT1", "LPA", "TNKS", "FADS3", "LIPC", "KPNB1", "PLTP", "APOC2"
-)
-JTI_known <- c(
-  "SORT1", "LPA", "TNKS", "FADS3", "LIPC", "KPNB1", "PLTP", "APOC2", "ANGPTL3",
-  "LIPA", "PPARG", "CETP", "ADH1B", "APOE", "FADS1", "LPIN3", "PCSK9"
-)
+# Load known reference genes
+known_genes <- read_sheet("S4_LDL_known_genes") %>% pull(genename)
 
-ldl <- read_results(ukbb_id = "30780_irnt", tissue = "Liver") %>%
-  mutate(known = ifelse(method == "JTI", gene_name %in% JTI_known, gene_name %in% p_known))
+# Load results from Zhou et. al Nat Gen 2020
+zhou <- zhou_results() %>% mutate(known = genename %in% known_genes)
 
-manhattan_ldl <- manhattan_base(ldl) +
-  geom_point(data = ldl %>% filter(!known), aes(color = paste("Additional", method))) +
-  geom_label_repel(
-    data = ldl %>% filter(known),
-    aes(label = gene_name, color = paste("Known", method)),
-    size = 3,
-    alpha = 0.9,
-    show.legend = FALSE,
-    box.padding = 0.5
-  ) +
-  geom_point(data = ldl %>% filter(known), aes(color = paste("Known", method))) +
-  scale_color_manual(values = c("#B4D88B", "#A6CEE2", "#34A048", "#1F78B4"))
+# Create lookup table for genes
+genes <- zhou %>% distinct(geneid, genename, known, chr, bp)
 
-bars <- ldl %>%
-  filter(p_fdr < 0.05) %>%
-  ggplot(aes(fct_rev(method), fill = paste(known, method))) +
-  geom_bar(stat = "count") +
-  geom_text(stat = "count", aes(label = ..count..), vjust = -1) +
-  scale_fill_manual(values = c("#B4D88B", "#A6CEE2", "#34A048", "#1F78B4")) +
-  scale_y_continuous(limits = c(0, 700)) +
-  facet_wrap(~ !known) +
-  ylab("Number of significant genes (p FDR < 0.05)") +
-  theme_bw() +
-  theme(
-    strip.text.x = element_blank(),
-    panel.border = element_blank(),
-    panel.grid = element_blank(),
-    axis.title.x = element_blank(),
-    axis.text.x = element_text(angle = 45, hjust = 1)
-  ) +
-  guides(fill = FALSE)
+# Load association results for LDL & Liver
+ldl <- read_results(ukbb_id = "30780_irnt", tissue = "Liver") %>% inner_join(genes)
+```
+
+```{r, warning=FALSE, fig.fullwidth = TRUE, fig.width=10, fig.height=10}
+fig4(ldl %>% filter(method != "UTMOST"), title="Manz 2021") / fig4(zhou, title="Zhou et. al, Nature Gen 2020")
 ```
   
+# Annotate known genes that don't match Zhou et al.
+```{r, warning=FALSE, fig.fullwidth = TRUE, fig.width=10, fig.height=10}
+filter_missing <- function(x) filter(x, method == "JTI" & genename %in% c("LIPA", "APOC2"))
+
+manz2 <- (manhatten_labeled_fdr(ldl %>% filter(method != "UTMOST"), gray_below = TRUE) +
+  geom_label_repel(data = filter_missing, aes(label = genename), size = 3, show.legend = FALSE,box.padding = 0.5) + 
+  geom_point(data = filter_missing) + 
+  ggtitle("Manz 2021")
+) + sig_genes_bars(ldl %>% filter(method != "UTMOST")) + plot_layout(widths = c(5, 1))
+
+zhou2 <- (manhatten_labeled_fdr(zhou, gray_below = TRUE) + 
+  geom_point(data = filter_missing) + 
+  ggtitle("Zhou et. al, Nature Gen 2020")
+) + sig_genes_bars(zhou) + 
+  plot_layout(widths = c(5, 1))
+
+manz2 / zhou2
+```
+
+# Compare with JTI with UTMOST
+
 ```{r, warning=FALSE, fig.fullwidth = TRUE, fig.width=10, fig.height=6}
-manhattan_ldl + bars + plot_layout(widths = c(5, 1))
+fig4(ldl %>% filter(method != "PrediXcan"), colors = c("#B4D88B", "#FCAE6B", "#34A048", "#E6550E"))
 ```
-
-
-# Annotate "known" associations that weren't found to be significant
 ```{r, warning=FALSE, fig.fullwidth = TRUE, fig.width=10, fig.height=6}
-set.seed(10)
-m4 <- manhattan_base(ldl %>% filter(p_fdr < 0.05)) +
-  geom_point(data = ldl %>% filter(p_fdr > 0.05), color = 'gray') +
-  geom_point(data = ldl %>% filter(!known & p_fdr < 0.05), aes(color = paste("Additional", method))) +
-  geom_label_repel(
-    data = ldl %>% filter(known & p_fdr < 0.05),
-    aes(label = gene_name, color = paste("Known", method)),
-    size = 3,
-    alpha = 0.9,
-    show.legend = FALSE,
-    box.padding = 0.5
-  ) +
-  geom_point(data = ldl %>% filter(known & p_fdr < 0.05), aes(color = paste("Known", method))) +
-  geom_label_repel(
-    data = ldl %>% filter(known & p_fdr > 0.05),
-    aes(label = gene_name),
-    size = 3,
-    alpha = 0.9,
-    show.legend = FALSE,
-    box.padding = 0.5,
-  ) +
-  geom_point(data = ldl %>% filter(p_fdr > 0.05 & known)) +
-  scale_color_manual(values = c("#B4D88B", "#A6CEE2", "#34A048", "#1F78B4"))
+fig4(
+  results = ldl, 
+  colors = c("#B4D88B", "#A6CEE2", "#FCAE6B", "#34A048", "#1F78B4", "#E6550E"),
+  gray_below = TRUE
+)
 ```
-
-
-```{r, fig.fullwidth = TRUE, fig.width=10, fig.height=6}
-get_sets <- function(ldl_df) {
-  thresh <- ldl_df %>% filter(p_fdr < 0.05)
-  all_sig <- thresh %>% pull(gene_name) %>% unique()
-  jti <- thresh %>% filter(method == "JTI")
-  p <- thresh %>% filter(method == "PrediXcan")
-  +t(rbind(
-    all_sig %in% (jti %>% filter(known))$gene_name,
-    all_sig %in% (jti %>% filter(!known))$gene_name,
-    all_sig %in% (p %>% filter(known))$gene_name,
-    all_sig %in% (p %>% filter(!known))$gene_name
-  )) %>% as.data.frame()
-}
-```
-
-
-# Recreate from paper
-```{r, warning=FALSE}
-
-read_s5 <- function(fp) {
-  data <- readxl::read_excel(fp, sheet = "S5_LDL_TWAS") %>% 
-    select(genename, chr, left, right, pvalue_PrediXcan, pvalue_JTI) %>%
-    pivot_longer(
-      cols = starts_with('pvalue'),
-      names_to = "method", 
-      names_prefix = "pvalue_",
-      values_to = "pvalue"
-    ) %>%
-    rename(gene_name = genename, start_position = left, end_position = right) %>%
-    mutate(
-      pvalue = as.numeric(pvalue),
-      bp = start_position,
-      p_fdr = p.adjust(pvalue, method = "fdr"),
-      p_bonferroni = p.adjust(pvalue, method = "bonferroni")
-    ) %>%
-    arrange(desc(method)) %>%
-    drop_na() %>% 
-    mutate(known = ifelse(method == "JTI", gene_name %in% JTI_known, gene_name %in% p_known))
-  
-  data %>%
-    group_by(chr) %>%
-    summarise(chr_len = max(bp)) %>%
-    mutate(tot = cumsum(chr_len) - chr_len) %>%
-    select(-chr_len) %>%
-    left_join(data, ., by = "chr") %>%
-    mutate(bp_cum = tot + bp)
-}
-```
-
-```{r, warning=F}
-ldl_paper <- read_s5(".data/supplement/41588_2020_706_MOESM3_ESM.xlsx")
-m2 <- manhattan_base(ldl_paper) +
-  geom_point(data = ldl_paper %>% filter(!known), aes(color = paste("Additional", method))) +
-  geom_label_repel(
-    data = ldl_paper %>% filter(known),
-    aes(label = gene_name, color = paste("Known", method)),
-    size = 3,
-    alpha = 0.9,
-    show.legend = FALSE,
-    box.padding = 0.5
-  ) +
-  geom_point(data = ldl_paper%>% filter(known), aes(color = paste("Known", method))) +
-  scale_color_manual(values = c("#B4D88B", "#A6CEE2", "#34A048", "#1F78B4"))
-m2
-```
-
-```{r, warning=F}
-set.seed(10)
-m3 <- manhattan_base(ldl_paper %>% filter(p_fdr < 0.05)) +
-  geom_point(data = ldl_paper %>% filter(p_fdr > 0.05), color = 'gray') +
-  geom_point(data = ldl_paper %>% filter(!known & p_fdr < 0.05), aes(color = paste("Additional", method))) +
-  geom_label_repel(
-    data = ldl_paper %>% filter(known & p_fdr < 0.05),
-    aes(label = gene_name, color = paste("Known", method)),
-    size = 3,
-    alpha = 0.9,
-    show.legend = FALSE,
-    box.padding = 0.5
-  ) +
-  geom_point(data = ldl_paper %>% filter(known & p_fdr < 0.05), aes(color = paste("Known", method))) +
-  geom_label_repel(
-    data = ldl_paper %>% filter(known & p_fdr > 0.05),
-    aes(label = gene_name),
-    size = 3,
-    alpha = 0.9,
-    show.legend = FALSE,
-    box.padding = 0.5,
-  ) +
-  geom_point(data = ldl_paper %>% filter(p_fdr > 0.05 & known)) +
-  scale_color_manual(values = c("#B4D88B", "#A6CEE2", "#34A048", "#1F78B4"))
-```
-
-
-```{r, warning=FALSE, fig.fullwidth = TRUE, fig.width=10, fig.height=10}
-m3 / m4
-```
-
-```{r, warning=FALSE, fig.fullwidth = TRUE, fig.width=10, fig.height=10}
-paper <- ldl_paper %>%
-  # filter(known) %>% 
-  mutate(id = paste0(method, "_", gene_name)) %>%
-  select(id, pvalue, p_fdr)
-
-trevor <- ldl %>% 
-  # filter(known) %>% 
-  select(gene_name, pvalue, method, known, p_fdr) %>%
-  mutate(id = paste0(method, "_", gene_name))
-
-joined <- inner_join(trevor, paper, by='id', suffix = c("_trevor", "_paper")) %>% 
-  filter(!(gene_name %in% c('SORT1', 'CELSR2', 'PSRC1', 'BCAM'))) %>%
-  arrange(-pvalue_trevor) %>% 
-  drop_na()
-```
-
-```{r, warning=FALSE, fig.fullwidth = TRUE, fig.width=10, fig.height=10}
-joined %>%
-  ggplot(aes(-log10(pvalue_trevor), -log10(pvalue_paper))) + 
-  geom_point() +
-  coord_fixed() +
-  scale_y_log10(
-    breaks = c(1, 2, 3, 5, 10, 20, 30, 50, 100),
-    limits = c(0.7, 200),
-    expand = c(0, 0)
-  ) +
-  scale_x_log10(
-    breaks = c(1, 2, 3, 5, 10, 20, 30, 50, 100),
-    limits = c(0.7, 200),
-    expand = c(0, 0)
-  ) +
-  theme_bw()
-```
-
-
-
-```{r, warning=FALSE, fig.fullwidth = TRUE, fig.width=10, fig.height=10}
-
-j_known <- joined %>% filter(method == "JTI") %>% sample_n(1000)
-m <- lm(log(pvalue_paper) ~ log(pvalue_trevor), data = j_known)
-
-tibble(fitted = -predict(m), resid = resid(m)) %>% 
-  ggplot(aes(fitted, resid)) + 
-    geom_point() +
-    theme_bw()
-```
-
-# Compare weights
-
-```{r}
-library(tidyverse)
-library(dbplyr)
-con <- DBI::dbConnect(RSQLite::SQLite(), path = "./data/JTI_Adipose_Visceral_Omentum.db")
-weights <- tbl(con, "weights")
-```
-
-
