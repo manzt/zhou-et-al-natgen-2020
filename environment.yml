@@ -1,0 +1,10 @@
+name: pqe
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - python 3.9.5
+  - snakemake-minimal=6.4.0
+  - numpy=1.20.3
+  - pandas=1.2.4
+  - scipy=1.6.3

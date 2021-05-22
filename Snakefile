@@ -25,9 +25,19 @@ SPRED_OUT = [f"{g}-{m}_{t}" for (g, t), m in product(GWAS_TISSUE_PAIRS, METHODS)
 
 rule all:
   input:
-    "reports/01_gwas.html",
-    "reports/02_num_significant_genes.html",
-    "reports/03_compare_weights.html"
+    expand("results/weights_summary_{tissue}.csv", tissue=["Liver", "Muscle_Skeletal", "Kidney_Cortex", "Pancreas"]),
+    expand("results/{out}.csv", out=SPRED_OUT),
+    "data/supplementary_tables.xlsx"
+  output:
+    "summary.pdf"
+  shell:
+    """
+    cd notebooks
+    Rscript -e "bookdown::render_book('index.Rmd', 'bookdown::pdf_book')"
+    cd .. 
+    mv notebooks/_book/_main.pdf {output}
+    rmdir notebooks/_book
+    """
 
 # Installs branch of MetaXcan from GitHub
 rule install_MetaXcan:
@@ -95,43 +105,10 @@ rule run_SPrediXcan:
       --output_file {output} \
     """
 
-rule gwas_analysis:
-  input:
-    "results/30780_irnt-PrediXcan_Liver.csv",
-    "results/30780_irnt-JTI_Liver.csv",
-    "results/30780_irnt-UTMOST_Liver.csv",
-    "data/supplementary_tables.xlsx"
-  output: "reports/01_gwas.html"
-  shell:
-    """
-    R -e "rmarkdown::render('01_gwas.Rmd', output_file = '{output}')"
-    """
-
-rule count_significant_genes:
-  input: expand("results/{out}.csv", out=SPRED_OUT)
-  output: "reports/02_num_significant_genes.html"
-  shell:
-    """
-    R -e "rmarkdown::render('02_num_significant_genes.Rmd', output_file = '{output}')"
-    """
-
 rule summarise_weights:
   input:
     db0="data/weights/UTMOST_{tissue}.db",
     db1="data/weights/JTI_{tissue}.db",
     db2="data/weights/PrediXcan_{tissue}.db"
   output: "results/weights_summary_{tissue}.csv",
-  shell:
-    """
-    python scripts/compare_weights.py --out {output} \
-      {input.db0} {input.db1} {input.db2}
-    """
-
-rule compare_weights:
-  input:
-    expand("results/weights_summary_{tissue}.csv", tissue=["Liver", "Muscle_Skeletal", "Kidney_Cortex", "Pancreas"])
-  output: "reports/03_compare_weights.html"
-  shell:
-    """
-    R -e "rmarkdown::render('03_compare_weights.Rmd', output_file = '{output}')"
-    """
+  shell: "python scripts/compare_weights.py --out {output} {input.db0} {input.db1} {input.db2}"

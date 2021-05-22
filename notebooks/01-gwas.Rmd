@@ -1,13 +1,4 @@
----
-title: "GWAS"
-author: "Trevor Manz"
-date: "5/19/2021"
-output: html_document
----
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
+# GWAS
 
 ```{r, message=FALSE, warning=FALSE}
 library(tidyverse)
@@ -19,7 +10,7 @@ set.seed(42)
 #### Data utils
 
 read_sheet <- function(name) {
-  fs::path("data", "supplementary_tables.xlsx") %>% readxl::read_excel(name)
+  fs::path("..", "data", "supplementary_tables.xlsx") %>% readxl::read_excel(name)
 }
 
 # Load results from Zhou et al, NatGen 201
@@ -44,7 +35,7 @@ zhou_results <- function() {
 
 # Load local GWAS result
 read_result <- function(ukbb_id, method, tissue) {
-  fs::path("results", paste0(ukbb_id, "-", method, "_", tissue, ".csv")) %>%
+  fs::path("..", "results", paste0(ukbb_id, "-", method, "_", tissue, ".csv")) %>%
     read_csv() %>%
     # Match columns to zhou results
     rename(geneid = gene, genename = gene_name) %>%
@@ -152,7 +143,7 @@ fig4 <- function(results, title = NULL, colors = COLORS, gray_below = FALSE) {
 }
 ```
 
-# Manhattan plot for LDL-C level from the application of PrediXcan and JTI models in liver to UK Biobank LDL-C GWAS summary statistics.
+## Manhattan plot for LDL-C level from the application of PrediXcan and JTI models in liver to UK Biobank LDL-C GWAS summary statistics.
 ```{r, warning=FALSE, message=FALSE}
 # Load known reference genes
 known_genes <- read_sheet("S4_LDL_known_genes") %>% pull(genename)
@@ -171,7 +162,7 @@ ldl <- read_results(ukbb_id = "30780_irnt", tissue = "Liver") %>% inner_join(gen
 fig4(ldl %>% filter(method != "UTMOST"), title = "Manz 2021") / fig4(zhou, title = "Zhou et. al, Nature Gen 2020")
 ```
   
-# Annotate known genes that don't match Zhou et al.
+## Annotate known genes that don't match Zhou et al.
 ```{r, warning=FALSE, fig.fullwidth = TRUE, fig.width=10, fig.height=10}
 filter_missing <- function(x) filter(x, method == "JTI" & genename %in% c("LIPA", "APOC2"))
 
@@ -190,7 +181,7 @@ zhou2 <- (manhatten_labeled_fdr(zhou, gray_below = TRUE) +
 manz2 / zhou2
 ```
 
-# Compare with JTI with UTMOST
+## Compare with JTI with UTMOST
 
 ```{r, warning=FALSE, fig.fullwidth = TRUE, fig.width=10, fig.height=6}
 fig4(ldl %>% filter(method != "PrediXcan"), colors = c("#B4D88B", "#FCAE6B", "#34A048", "#E6550E"))

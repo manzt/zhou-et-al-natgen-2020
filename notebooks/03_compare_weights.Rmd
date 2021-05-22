@@ -1,22 +1,13 @@
----
-title: "Comparison of weights in JTI, UTMOST, and PrediXCan"
-author: "Trevor Manz"
-date: "5/19/2021"
-output: html_document
----
+# Comparison of weights in JTI, UTMOST, and PrediXCan
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
-# Summary of weight vector statistics by gene and weights across all genes and methods
+## Summary of weight vector statistics by gene and weights across all genes and methods
 ```{r, message=FALSE, warning=FALSE}
 library(tidyverse)
 library(patchwork)
 library(GGally)
 
 load_weights <- function(method, tissue) {
-  db <- fs::path("data", "weights", paste0(method, "_", tissue, ".db"))
+  db <- fs::path("..", "data", "weights", paste0(method, "_", tissue, ".db"))
   conn <- DBI::dbConnect(RSQLite::SQLite(), db)
   df <- tbl(conn, "weights") %>% collect()
   DBI::dbDisconnect(conn)
@@ -24,19 +15,19 @@ load_weights <- function(method, tissue) {
 }
 
 load_tissue <- function(tissue, methods = c("UTMOST", "PredixCan", "JTI")) {
-  methods %>% 
+  methods %>%
     map(function(m) load_weights(m, tissue)) %>%
     bind_rows()
 }
 
 summarize_weights <- function(tissue_df) {
-  tissue_df %>% 
+  tissue_df %>%
     group_by(gene, method) %>%
     summarise(
       l1_norm = abs(sum(weight)),
       l2_norm = sqrt(sum(weight^2)),
-      non_zero = n(), 
-      .groups = 'drop'
+      non_zero = n(),
+      .groups = "drop"
     )
 }
 
@@ -46,11 +37,11 @@ plot_tissue_summary <- function(tissue) {
   summary <- weights %>% summarize_weights()
 
   color_s <- scale_color_manual(values = c("#B4D88B", "#A6CEE2", "#FCAE6B"))
-  base <- ggplot(summary, aes(color = method)) + 
-    color_s +   
+  base <- ggplot(summary, aes(color = method)) +
+    color_s +
     guides(color = FALSE) +
     theme_minimal()
-  
+
   p1 <- base + stat_ecdf(aes(l1_norm))
   p2 <- base + stat_ecdf(aes(l2_norm))
   p3 <- base + stat_ecdf(aes(non_zero))
@@ -58,8 +49,8 @@ plot_tissue_summary <- function(tissue) {
     stat_ecdf(aes(weight)) +
     color_s +
     theme_minimal() +
-    theme(legend.position = 'top')
-  
+    theme(legend.position = "top")
+
   plt <- (p1 | p2 | p3) / p4
   plt + plot_annotation(
     title = tissue,
@@ -89,21 +80,21 @@ plot_tissue_summary("Pancreas")
 
 ```{r, message=F}
 load_summary <- function(tissue) {
-  fs::path("results", paste0("weights_summary_", tissue, ".csv")) %>%
+  fs::path("..", "results", paste0("weights_summary_", tissue, ".csv")) %>%
     read_csv()
 }
 
 plot_diff_summary <- function(tissue_diff_summary, title) {
   tissue_diff_summary %>%
-  ggplot(aes(diff_l2, color = paste(method1, method2, sep = " - "))) +
+    ggplot(aes(diff_l2, color = paste(method1, method2, sep = " - "))) +
     stat_ecdf() +
     theme_minimal() +
     theme(
-      legend.position = 'top',
+      legend.position = "top",
       legend.title = element_blank(),
       plot.title.position = "plot"
     ) +
-    labs(x = "|| w1 - w2 ||_2", y = 'F(x)') +
+    labs(x = "|| w1 - w2 ||_2", y = "F(x)") +
     scale_x_continuous(limits = c(0, 2))
 }
 
@@ -130,7 +121,7 @@ load_summary("Liver") %>%
     names_from = c(method1, method2),
     names_sep = "-",
     values_from = diff_l2
-) %>%
+  ) %>%
   drop_na() %>%
   select(-gene, -tissue) %>%
   ggpairs()
@@ -142,7 +133,7 @@ load_summary("Muscle_Skeletal") %>%
     names_from = c(method1, method2),
     names_sep = "-",
     values_from = diff_l2
-) %>%
+  ) %>%
   drop_na() %>%
   select(-gene, -tissue) %>%
   ggpairs() +
