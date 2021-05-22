@@ -29,7 +29,7 @@ $ snakemake --cores all # downloads all data, runs associations, and generates `
 ```
 
 Running the complete workflow will download and organize **all** the input data
-necessary to reproduce the gene-level association results described in Table S4,
+necessary to reproduce the gene-level association results described in Table S7,
 
 - GWAS summary statistics from UKBB
 - Pretrained Transcriptome Prediction Model databases (JTI, PrediXcan, UTMOST)
