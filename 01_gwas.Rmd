@@ -28,7 +28,7 @@ zhou_results <- function() {
     # Drop unused cols
     select(!genetype) %>%
     # Make table tidy
-    mutate(chr = as.character(chr)) %>% 
+    mutate(chr = as.character(chr)) %>%
     mutate(across(effect_size_PrediXcan:PFDR_JTI, as.numeric)) %>%
     pivot_longer(
       !c(genename, geneid, chr, left, right),
@@ -44,7 +44,7 @@ zhou_results <- function() {
 
 # Load local GWAS result
 read_result <- function(ukbb_id, method, tissue) {
-  fs::path("results", paste0(ukbb_id, "-", method, "_", tissue, ".csv")) %>% 
+  fs::path("results", paste0(ukbb_id, "-", method, "_", tissue, ".csv")) %>%
     read_csv() %>%
     # Match columns to zhou results
     rename(geneid = gene, genename = gene_name) %>%
@@ -54,7 +54,7 @@ read_result <- function(ukbb_id, method, tissue) {
 
 # Merge results from multiple methods
 read_results <- function(ukbb_id, tissue, methods = c("PrediXcan", "JTI", "UTMOST")) {
-  methods %>% 
+  methods %>%
     map(function(m) read_result(ukbb_id, m, tissue)) %>%
     bind_rows()
 }
@@ -81,7 +81,7 @@ manhattan_base <- function(res) {
     group_by(chr) %>%
     summarize(center = (max(bp_cum) + min(bp_cum)) / 2) %>%
     arrange(as.numeric(chr))
-  
+
   ggplot(res, aes(x = bp_cum, y = -log10(pvalue))) +
     scale_x_continuous(
       label = c(1:15, "", 17, "", 19, "", 21, ""),
@@ -105,21 +105,21 @@ sig_genes_bars <- function(results, fdr = FDR, colors = COLORS) {
   results %>%
     filter(pfdr < fdr) %>%
     ggplot(aes(fct_rev(method), fill = paste(known, method))) +
-      geom_bar(stat = "count") +
-      geom_text(stat = "count", aes(label = ..count..), vjust = -1) +
-      scale_y_continuous(limits = c(0, 700)) +
-      facet_wrap(~ !known) +
-      ylab("Number of significant genes (p FDR < 0.05)") +
-      theme_bw() +
-      theme(
-        strip.text.x = element_blank(),
-        panel.border = element_blank(),
-        panel.grid = element_blank(),
-        axis.title.x = element_blank(),
-        axis.text.x = element_text(angle = 45, hjust = 1)
-      ) +
-      guides(fill = FALSE) +
-      scale_fill_manual(values = colors)
+    geom_bar(stat = "count") +
+    geom_text(stat = "count", aes(label = ..count..), vjust = -1) +
+    scale_y_continuous(limits = c(0, 700)) +
+    facet_wrap(~ !known) +
+    ylab("Number of significant genes (p FDR < 0.05)") +
+    theme_bw() +
+    theme(
+      strip.text.x = element_blank(),
+      panel.border = element_blank(),
+      panel.grid = element_blank(),
+      axis.title.x = element_blank(),
+      axis.text.x = element_text(angle = 45, hjust = 1)
+    ) +
+    guides(fill = FALSE) +
+    scale_fill_manual(values = colors)
 }
 
 manhatten_labeled_fdr <- function(results, fdr = FDR, colors = COLORS, gray_below = FALSE) {
@@ -129,7 +129,7 @@ manhatten_labeled_fdr <- function(results, fdr = FDR, colors = COLORS, gray_belo
     below_pts <- geom_point(data = ~ filter(.x, pfdr > fdr), aes(color = paste("Addtional", method)))
   }
   manhattan_base(results) +
-    geom_point(data = ~ filter(.x, pfdr < fdr & !known), aes(color = paste("Addtional", method))) + 
+    geom_point(data = ~ filter(.x, pfdr < fdr & !known), aes(color = paste("Addtional", method))) +
     geom_point(data = ~ filter(.x, pfdr < fdr & known), aes(color = paste("Known", method))) +
     below_pts +
     geom_label_repel(
@@ -147,7 +147,7 @@ manhatten_labeled_fdr <- function(results, fdr = FDR, colors = COLORS, gray_belo
 fig4 <- function(results, title = NULL, colors = COLORS, gray_below = FALSE) {
   if (!is.null(title)) title <- ggtitle(title)
   m <- manhatten_labeled_fdr(results, colors = colors, gray_below = gray_below) + title
-  bars <- sig_genes_bars(results, colors = colors) 
+  bars <- sig_genes_bars(results, colors = colors)
   m + bars + plot_layout(widths = c(5, 1))
 }
 ```
@@ -168,7 +168,7 @@ ldl <- read_results(ukbb_id = "30780_irnt", tissue = "Liver") %>% inner_join(gen
 ```
 
 ```{r, warning=FALSE, fig.fullwidth = TRUE, fig.width=10, fig.height=10}
-fig4(ldl %>% filter(method != "UTMOST"), title="Manz 2021") / fig4(zhou, title="Zhou et. al, Nature Gen 2020")
+fig4(ldl %>% filter(method != "UTMOST"), title = "Manz 2021") / fig4(zhou, title = "Zhou et. al, Nature Gen 2020")
 ```
   
 # Annotate known genes that don't match Zhou et al.
@@ -176,15 +176,15 @@ fig4(ldl %>% filter(method != "UTMOST"), title="Manz 2021") / fig4(zhou, title="
 filter_missing <- function(x) filter(x, method == "JTI" & genename %in% c("LIPA", "APOC2"))
 
 manz2 <- (manhatten_labeled_fdr(ldl %>% filter(method != "UTMOST"), gray_below = TRUE) +
-  geom_label_repel(data = filter_missing, aes(label = genename), size = 3, show.legend = FALSE,box.padding = 0.5) + 
-  geom_point(data = filter_missing) + 
+  geom_label_repel(data = filter_missing, aes(label = genename), size = 3, show.legend = FALSE, box.padding = 0.5) +
+  geom_point(data = filter_missing) +
   ggtitle("Manz 2021")
 ) + sig_genes_bars(ldl %>% filter(method != "UTMOST")) + plot_layout(widths = c(5, 1))
 
-zhou2 <- (manhatten_labeled_fdr(zhou, gray_below = TRUE) + 
-  geom_point(data = filter_missing) + 
+zhou2 <- (manhatten_labeled_fdr(zhou, gray_below = TRUE) +
+  geom_point(data = filter_missing) +
   ggtitle("Zhou et. al, Nature Gen 2020")
-) + sig_genes_bars(zhou) + 
+) + sig_genes_bars(zhou) +
   plot_layout(widths = c(5, 1))
 
 manz2 / zhou2
@@ -198,7 +198,7 @@ fig4(ldl %>% filter(method != "PrediXcan"), colors = c("#B4D88B", "#FCAE6B", "#3
 
 ```{r, warning=FALSE, fig.fullwidth = TRUE, fig.width=10, fig.height=6}
 fig4(
-  results = ldl, 
+  results = ldl,
   colors = c("#B4D88B", "#A6CEE2", "#FCAE6B", "#34A048", "#1F78B4", "#E6550E"),
   gray_below = TRUE
 )

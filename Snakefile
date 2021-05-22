@@ -24,7 +24,10 @@ LOOKUP = {
 SPRED_OUT = [f"{g}-{m}_{t}" for (g, t), m in product(GWAS_TISSUE_PAIRS, METHODS)]
 
 rule all:
-  input: expand("results/{out}.csv", out=SPRED_OUT)
+  input:
+    "reports/01_gwas.html",
+    "reports/02_num_significant_genes.html",
+    "reports/03_compare_weights.html"
 
 # Installs branch of MetaXcan from GitHub
 rule install_MetaXcan:
@@ -112,8 +115,21 @@ rule count_significant_genes:
     R -e "rmarkdown::render('02_num_significant_genes.Rmd', output_file = '{output}')"
     """
 
+rule summarise_weights:
+  input:
+    db0="data/weights/UTMOST_{tissue}.db",
+    db1="data/weights/JTI_{tissue}.db",
+    db2="data/weights/PrediXcan_{tissue}.db"
+  output: "results/weights_summary_{tissue}.csv",
+  shell:
+    """
+    python scripts/compare_weights.py --out {output} \
+      {input.db0} {input.db1} {input.db2}
+    """
+
 rule compare_weights:
-  input: expand("data/weights/{method}_{tissue}.db", method=METHODS, tissue=[p[1] for p in GWAS_TISSUE_PAIRS])
+  input:
+    expand("results/weights_summary_{tissue}.csv", tissue=["Liver", "Muscle_Skeletal", "Kidney_Cortex", "Pancreas"])
   output: "reports/03_compare_weights.html"
   shell:
     """
