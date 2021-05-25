@@ -80,8 +80,39 @@ plot_tissue_summary("Pancreas")
 
 ```{r, message=F}
 load_summary <- function(tissue) {
-  fs::path("..", "results", paste0("weights_summary_", tissue, ".csv")) %>%
-    read_csv()
+  # Load all weights from DBs
+  weights <- load_tissue(tissue) %>% 
+    select(rsid, gene, weight, method)
+  
+  # Find genes for which all three methods have weights
+  genes <- weights %>%
+    select(gene, weight, method) %>%
+    group_by(method, gene) %>%
+    pivot_wider(
+      names_from = method,
+      values_from = weight,
+      values_fn = length
+    ) %>%
+    drop_na() %>%
+    pull(gene)
+  
+  # Compute the l2 norm of diff between weights for different methods
+  l2_diff <- weights %>%
+    filter(gene %in% genes) %>%
+    pivot_wider(names_from = method, values_from = weight, values_fill = 0) %>%
+    group_by(gene) %>%
+    summarise(
+      UTMOST_PredixCan = norm(UTMOST - PredixCan, type = "2"),
+      UTMOST_JTI = norm(UTMOST - JTI, type = "2"),
+      JTI_PrediXCan = norm(JTI - PredixCan, type = "2")
+    ) %>%
+    pivot_longer(
+      -gene,
+      names_to = c("method1", "method2"),
+      names_sep = "_", 
+      values_to = "diff_l2"
+    ) %>%
+    mutate(tissue = tissue)
 }
 
 plot_diff_summary <- function(tissue_diff_summary, title) {

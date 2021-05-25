@@ -25,7 +25,6 @@ SPRED_OUT = [f"{g}-{m}_{t}" for (g, t), m in product(GWAS_TISSUE_PAIRS, METHODS)
 
 rule all:
   input:
-    expand("results/weights_summary_{tissue}.csv", tissue=["Liver", "Muscle_Skeletal", "Kidney_Cortex", "Pancreas"]),
     expand("results/{out}.csv", out=SPRED_OUT),
     "data/supplementary_tables.xlsx"
   output:
@@ -104,11 +103,3 @@ rule run_SPrediXcan:
       --freq_column minor_AF \
       --output_file {output} \
     """
-
-rule summarise_weights:
-  input:
-    db0="data/weights/UTMOST_{tissue}.db",
-    db1="data/weights/JTI_{tissue}.db",
-    db2="data/weights/PrediXcan_{tissue}.db"
-  output: "results/weights_summary_{tissue}.csv",
-  shell: "python scripts/compare_weights.py --out {output} {input.db0} {input.db1} {input.db2}"
